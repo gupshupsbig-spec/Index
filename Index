@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBI General Gup Shup - Visit Photo Uploader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #2c0e70; /* Approximated purple from image */
+            border-bottom: 2px solid #ed1c24; /* Approximated red from image */
+            padding-bottom: 10px;
+            margin-bottom: 25px;
+        }
+        .control-panel {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+            margin-bottom: 20px;
+        }
+        .panel-row {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="file"] {
+            font-size: 16px;
+        }
+        .info-text {
+            color: #777;
+            font-size: 0.9em;
+            margin-top: -10px;
+            margin-bottom: 15px;
+        }
+        .preview-area {
+            position: relative;
+            margin-top: 20px;
+            text-align: center;
+        }
+        /* Style the actual composite image container */
+        #frame-container {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        /* Style the background frame image */
+        #frame-image {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+        /* Style the uploaded user photo layer */
+        #visit-photo {
+            position: absolute;
+            /* Match the inner box position of the frame in image_0.png */
+            top: 14.8%; /* Adjust to fit the top white border */
+            left: 10.3%; /* Adjust to fit the left white border */
+            width: 78.4%; /* Adjust to fit the inside area width */
+            height: 49.3%; /* Adjust to fit the inside area height */
+            /* Ensure the user photo sits behind the frame overlay */
+            z-index: 1; 
+            object-fit: cover; /* Crop and fill to the box */
+            display: none; /* Hidden until loaded */
+        }
+        /* Style the overlay layer with text/graphics (or a transparent part of the frame) */
+        #frame-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2; /* Sits over the photo */
+            /* In a real implementation, this would be image_0.png with the photo space made transparent. */
+            border: 2px solid green; /* Example of placing something on top */
+            box-sizing: border-box; /* To keep border inside */
+            /* Remove this border property below, it's just for visualization.
+               You would set background: transparent; or background-image: url('your_frame.png'); */
+            display: none;
+        }
+
+        button {
+            background-color: #ed1c24;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #c9171d;
+        }
+        button:disabled {
+            background-color: #e0e0e0;
+            color: #888;
+            cursor: not-allowed;
+        }
+        #downloadBtn {
+            background-color: #2c0e70;
+        }
+        #downloadBtn:hover {
+            background-color: #1e094d;
+        }
+        #canvas-holder {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>SBI General Gup Shup - Generate Your Visit Photo</h2>
+
+    <div class="control-panel">
+        <div class="panel-row">
+            <label for="photoFile">1. Upload your Visit Photo from Gallery:</label>
+            <input type="file" id="photoFile" accept="image/*">
+            <p class="info-text">Supported formats: JPG, PNG, GIF</p>
+        </div>
+        
+        <div class="panel-row">
+            <button id="processBtn" disabled>Process and Generate Image</button>
+            <button id="downloadBtn" style="display: none;">Download to Gallery</button>
+        </div>
+    </div>
+
+    <div class="preview-area">
+        <label>Final Image Preview:</label>
+        <p class="info-text">Once generated, your final image will appear below.</p>
+        
+        <div id="frame-container">
+            <!-- This is the background frame -->
+            <img id="frame-image" src="sbi-frame.png" alt="Your provided SBI Gup Shup frame image (sbi-frame.png)">
+            
+            <!-- This is where your uploaded visit photo will be inserted -->
+            <img id="visit-photo" alt="Visit Photo Preview">
+            
+            <!-- This is an optional overlay layer (e.g., if you had foreground text to keep over the photo) -->
+            <!-- <div id="frame-overlay"></div> -->
+        </div>
+    </div>
+
+    <!-- Hidden canvas area for generating the download image -->
+    <div id="canvas-holder">
+        <canvas id="outputCanvas"></canvas>
+    </div>
+</div>
+
+<script>
+    // Constants for positions based on the provided image
+    // Coordinates for the inner photo space from top-left (percentages relative to entire image)
+    const FRAME_INNER_BOX = {
+        topPercent: 0.147,     // 14.7% down from top
+        leftPercent: 0.103,    // 10.3% in from left
+        widthPercent: 0.785,   // 78.5% of total width
+        heightPercent: 0.493   // 49.3% of total height
+    };
+
+    const photoFileInput = document.getElementById('photoFile');
+    const processBtn = document.getElementById('processBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const frameImageEl = document.getElementById('frame-image');
+    const visitPhotoEl = document.getElementById('visit-photo');
+    const canvas = document.getElementById('outputCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let originalFrameSrc = 'sbi-frame.png'; // Update this to point to your *transparent* frame
+
+    // Enable process button when a file is selected
+    photoFileInput.addEventListener('change', function(event) {
+        if (event.target.files && event.target.files[0]) {
+            processBtn.disabled = false;
+            // Hide previous results
+            visitPhotoEl.style.display = 'none';
+            downloadBtn.style.display = 'none';
+        } else {
+            processBtn.disabled = true;
+        }
+    });
+
+    // Handle "Process and Generate Image" button
+    processBtn.addEventListener('click', function() {
+        const file = photoFileInput.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            const uploadedPhotoUrl = e.target.result;
+            
+            // Wait for the uploaded image to load to get its dimensions
+            const tempPhotoImg = new Image();
+            tempPhotoImg.onload = function() {
+                
+                // 1. Get dimensions of the base frame image
+                const frameWidth = frameImageEl.naturalWidth;
+                const frameHeight = frameImageEl.naturalHeight;
+
+                if (frameWidth === 0 || frameHeight === 0) {
+                    alert('Error: "sbi-frame.png" could not be found or loaded. Please make sure the file exists in the same folder.');
+                    return;
+                }
+
+                // 2. Set up the canvas at full resolution
+                canvas.width = frameWidth;
+                canvas.height = frameHeight;
+
+                // 3. Draw the frame (base layer)
+                ctx.drawImage(frameImageEl, 0, 0, frameWidth, frameHeight);
+
+                // 4. Calculate coordinates and dimensions for the user photo box
+                const innerX = frameWidth * FRAME_INNER_BOX.leftPercent;
+                const innerY = frameHeight * FRAME_INNER_BOX.topPercent;
+                const innerW = frameWidth * FRAME_INNER_BOX.widthPercent;
+                const innerH = frameHeight * FRAME_INNER_BOX.heightPercent;
+
+                // 5. Draw the uploaded user photo inside the box, respecting "object-fit: cover" (cropping)
+                // Calculate draw dimensions for 'cover' behavior
+                const photoAspect = tempPhotoImg.width / tempPhotoImg.height;
+                const boxAspect = innerW / innerH;
+
+                let drawX, drawY, drawW, drawH;
+
+                if (photoAspect > boxAspect) {
+                    // Image is wider than the box, crop sides
+                    drawH = innerH;
+                    drawW = innerH * photoAspect;
+                    drawX = innerX - (drawW - innerW) / 2;
+                    drawY = innerY;
+                } else {
+                    // Image is taller than the box, crop top/bottom
+                    drawW = innerW;
+                    drawH = innerW / photoAspect;
+                    drawX = innerX;
+                    drawY = innerY - (drawH - innerH) / 2;
+                }
+
+                ctx.save(); // Save the state before clipping
+                ctx.rect(innerX, innerY, innerW, innerH); // Define the box area
+                ctx.clip(); // Apply clipping to the box area
+                ctx.drawImage(tempPhotoImg, drawX, drawY, drawW, drawH); // Draw the photo
+                ctx.restore(); // Restore clipping state
+
+                // *Important Note*: This implementation places the photo over the grey placeholder.
+                // For a truly professional result, the grey area should be made transparent in image_0.png, 
+                // and the frame should be drawn *last*. This tool generates the image in your browser,
+                // so drawing over it is necessary.
+
+                // 6. Output to the preview and show download button
+                visitPhotoEl.src = uploadedPhotoUrl;
+                visitPhotoEl.style.display = 'block';
+                downloadBtn.style.display = 'inline-block';
+            };
+            
+            tempPhotoImg.src = uploadedPhotoUrl;
+        };
+
+        reader.readAsDataURL(file);
+    });
+
+    // Handle "Download to Gallery" button
+    downloadBtn.addEventListener('click', function() {
+        // Convert canvas content to a downloadable data URL (PNG)
+        const outputImage = canvas.toDataURL("image/png");
+
+        // Create a temporary link element and trigger a download
+        const link = document.createElement('a');
+        link.href = outputImage;
+        link.download = 'SBI-GupShup-Visit-Photo.png'; // Define the filename
+        document.body.appendChild(link); // Append to trigger click in some browsers
+        link.click();
+        document.body.removeChild(link); // Clean up
+        
+        alert('Your image has been generated and download started. It will be saved in your devices download folder/gallery. You can now send it to WhatsApp.');
+    });
+
+    // Handle potential error loading the frame image
+    frameImageEl.onerror = function() {
+        alert('Error: "sbi-frame.png" could not be found. Please save the frame image you provided in the same folder as this tool, naming it "sbi-frame.png".');
+    }
+
+</script>
+
+</body>
+</html>
